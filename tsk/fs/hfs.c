@@ -3825,14 +3825,14 @@ hfs_load_extended_attrs(TSK_FS_FILE * fs_file,
                     *isCompressed = TRUE;       // The data is governed by a compression record (but might not be compressed)
                     *uncompressedSize = uncSize;
 
-                    if (cmpType == 3) {
+                    if ((cmpType == 3) || (cmpType == 7) || (cmpType == 9)) {
                         // Data is inline.  We will load the uncompressed data as a resident attribute.
 
                         TSK_FS_ATTR *fs_attr_unc;
 
                         if (tsk_verbose)
                             tsk_fprintf(stderr,
-                                "hfs_load_extended_attrs: Compressed data is inline in the attribute, will load this as the default DATA attribute.\n");
+                                "hfs_load_extended_attrs: Data is inline in the attribute, will load this as the default DATA attribute.\n");
 
                         if (attributeLength <= 16) {
                             if (tsk_verbose)
@@ -3950,12 +3950,12 @@ hfs_load_extended_attrs(TSK_FS_FILE * fs_file,
                             }   // END if leading byte is 0x0F  ELSE clause
                         }       // END if attributeLength <= 16  ELSE clause
                     }
-                    else if (cmpType == 4) {
-                        // Data is compressed in the resource fork
-                        *compDataInRSRC = TRUE; // The compressed data is in the RSRC fork
+                    else if ((cmpType == 4) || (cmpType == 8) || (cmpType == 10)) {
+                        // Data is in the resource fork
+                        *compDataInRSRC = TRUE; // The data is in the RSRC fork
                         if (tsk_verbose)
                             tsk_fprintf(stderr,
-                                "hfs_load_extended_attrs: Compressed data is in the file Resource Fork.\n");
+                                "hfs_load_extended_attrs: Data is in the file Resource Fork.\n");
                     }
                 }
                 else {          // Attrbute name is NOT com.apple.decmpfs
@@ -5886,7 +5886,7 @@ hfs_istat(TSK_FS_INFO * fs, FILE * hFile, TSK_INUM_T inum,
         cmpType = tsk_getu32(TSK_LIT_ENDIAN, cmph->compression_type);
         uncSize = tsk_getu64(TSK_LIT_ENDIAN, cmph->uncompressed_size);
 
-        if (cmpType == 3) {
+        if ((cmpType == 3) || (cmpType == 7) || (cmpType == 10)) {
             // Data is inline
             if ((cmph->attr_bytes[0] & 0x0F) == 0x0F) {
                 reallyCompressed = FALSE;
@@ -5897,7 +5897,7 @@ hfs_istat(TSK_FS_INFO * fs, FILE * hFile, TSK_INUM_T inum,
                 cmpSize = fs_attr->size - 16;   // subt size of header
             }
         }
-        else if (cmpType == 4) {
+        else if ((cmpType == 4) || (cmpType == 8)) {
             // Data is compressed in the resource fork
             reallyCompressed = TRUE;
         }
@@ -5907,21 +5907,28 @@ hfs_istat(TSK_FS_INFO * fs, FILE * hFile, TSK_INUM_T inum,
             tsk_fprintf(hFile,
                 "    Data is zlib compressed in the resource fork\n");
         }
-        else if (cmpType == 3) {
+        if (cmpType == 8) {
+            tsk_fprintf(hFile,
+                "    Data is LZVN compressed in the resource fork\n");
+        }
+        else if ((cmpType == 3) || (cmpType == 7)) {
             tsk_fprintf(hFile,
                 "    Data follows compression record in the CMPF attribute\n");
             tsk_fprintf(hFile, "    %" PRIu64 " bytes of data at offset ",
                 cmpSize);
-            if (reallyCompressed)
-                tsk_fprintf(hFile, "16, zlib compressed\n");
-            else
+            if (reallyCompressed) {
+                if (cmpType == 3)
+                    tsk_fprintf(hFile, "16, zlib compressed\n");
+                else
+                    tsk_fprintf(hFile, "16, LZVN compressed\n");
+            } else
                 tsk_fprintf(hFile, "17, not compressed\n");
         }
         else {
             tsk_fprintf(hFile, "    Compression type is UNKNOWN\n");
         }
         free(aBuf);
-        if (cmpType == 4
+        if (((cmpType == 4) || (cmpType == 8) || (cmpType == 10))
             && (tsk_getu64(fs->endian, entry.cat.resource.logic_sz) == 0))
             tsk_fprintf(hFile,
                 "WARNING: Compression record indicates compressed data"
